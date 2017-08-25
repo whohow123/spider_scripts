@@ -1,15 +1,18 @@
 # encoding: utf-8
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import ffmpy
-import configure
+from configure import config
 import json
-import asyncio
 import subprocess
 from os.path import join as pathjoin
 from html import unescape
 import requests
 from bs4 import BeautifulSoup
 import io
-import sys
+
 
 requests.packages.urllib3.disable_warnings()
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='gb18030')
@@ -17,28 +20,28 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='gb18030')
 
 class YoutubeSpider(object):
     """download youtube video info"""
-    def run(self):
+    async def run(self):
         search_info = {
             'words': 'child',
             'lan': 'en',
             'region_code': 'US',
             'relevance_language': 'en'
         }
-        search_url = configure.YOUTUBE_SEARCH_URL % \
-                     (search_info['words'], configure.GOOGLEAPIS_KEY, search_info['region_code'], search_info['relevance_language'])
+        search_url = config.YOUTUBE_SEARCH_URL % \
+                     (search_info['words'], config.GOOGLEAPIS_KEY, search_info['region_code'], search_info['relevance_language'])
 
-        video_list = self.get_youtube_search_results(search_url)
+        video_list = await self.get_youtube_search_results(search_url)
         for video_id in video_list:
-            video_url, title = self.get_best_download_url(video_id)
+            video_url, title = await self.get_best_download_url(video_id)
             if video_url != "" and title != "":
                 # down youtube video caption
-                res = self.get_video_caption(video_id, search_info, title)
+                res = await self.get_video_caption(video_id, search_info, title)
                 if res is True:
                     # down youtube video as mp3 format
-                    self.get_youtube_video_as_mp3(video_url, title)
+                    await self.get_youtube_video_as_mp3(video_url, title)
                     exit()
 
-    def get_youtube_search_results(self, search_url):
+    async def get_youtube_search_results(self, search_url):
         r = requests.get(search_url, verify=False)
         data_list = r.content.decode('utf-8', 'ignore')
         json_data_list = json.loads(data_list)
@@ -49,12 +52,12 @@ class YoutubeSpider(object):
 
         return id_list
 
-    def get_best_download_url(self, video_id):
+    async def get_best_download_url(self, video_id):
         # you-get
         title = ''
         download_url = ''
-        cmd = 'you-get --json '+configure.DETAIL_YOUTUBE+video_id
-        result = json.loads(self.run_cmd(cmd))
+        cmd = 'you-get --json '+config.DETAIL_YOUTUBE+video_id
+        result = json.loads(await self.run_cmd(cmd))
         if result['streams']:
             for key, val in result['streams'].items():
                 if val['container'] == 'mp4':
@@ -65,8 +68,8 @@ class YoutubeSpider(object):
 
         return download_url, title
 
-    def get_youtube_video_as_mp3(self, video_url, title):
-        file_name = pathjoin(configure.DOWN_DIR, title+'.mp3')
+    async def get_youtube_video_as_mp3(self, video_url, title):
+        file_name = pathjoin(config.DOWN_DIR, title+'.mp3')
 
         url_path = video_url
         mp3_path = file_name
@@ -79,12 +82,12 @@ class YoutubeSpider(object):
             ff.cmd
             ff.run()
 
-            print(title+' === success !')
+            print(title+' === Success !')
             return True
         except ffmpy.FFRuntimeError:
             print("MP4 to MP3 failed")
 
-    def get_video_caption(self, *args):
+    async def get_video_caption(self, *args):
         # script get youtube video caption
         video_id = args[0]
         search_info = args[1]
@@ -93,10 +96,10 @@ class YoutubeSpider(object):
         title = title.replace(':', ' -').replace('|', '-')
 
         # 设置要保存.srt字幕的路径
-        des = configure.DOWN_DIR + title + '.srt'
+        des = config.DOWN_DIR + title + '.srt'
 
         # 获取自带字幕
-        caption_url = configure.YOUTUBE_CAPTION_URL % (search_info['lan'], video_id)
+        caption_url = config.YOUTUBE_CAPTION_URL % (search_info['lan'], video_id)
 
         r_caps_en_xml = requests.get(caption_url, verify=False)
         xml_content = r_caps_en_xml.content.decode('utf-8', 'ignore')
@@ -120,10 +123,10 @@ class YoutubeSpider(object):
                     num += 1
             return True
         else:
-            print('xml is empty!')
+            print(video_id + ' xml is empty!')
             return False
 
-    def run_cmd(self, cmd):
+    async def run_cmd(self, cmd):
         process = subprocess.Popen(cmd, shell=True,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         result_f, error_f = process.stdout, process.stderr
@@ -151,6 +154,3 @@ class YoutubeSpider(object):
         shi = tm
 
         return "%02d:%02d:%02d,%03d" % (shi, fen, miao, hao)
-    
-
-YoutubeSpider().run()
