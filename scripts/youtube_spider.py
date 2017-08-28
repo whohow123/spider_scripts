@@ -12,7 +12,11 @@ from html import unescape
 import requests
 from bs4 import BeautifulSoup
 import io
+import logging
+from src import LogFormat
 
+LogFormat().main()
+logger = logging.getLogger(__name__)
 
 requests.packages.urllib3.disable_warnings()
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='gb18030')
@@ -20,7 +24,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='gb18030')
 
 class YoutubeSpider(object):
     """download youtube video info"""
-    async def run(self):
+    async def run(self, begin, end):
         search_info = {
             'words': 'child',
             'lan': 'en',
@@ -28,29 +32,56 @@ class YoutubeSpider(object):
             'relevance_language': 'en'
         }
         search_url = config.YOUTUBE_SEARCH_URL % \
-                     (search_info['words'], config.GOOGLEAPIS_KEY, search_info['region_code'], search_info['relevance_language'])
+                     (search_info['words'], config.GOOGLEAPIS_KEY, search_info['region_code'],
+                      search_info['relevance_language'], begin, end)
 
         video_list = await self.get_youtube_search_results(search_url)
-        for video_id in video_list:
-            video_url, title = await self.get_best_download_url(video_id)
-            if video_url != "" and title != "":
-                # down youtube video caption
-                res = await self.get_video_caption(video_id, search_info, title)
-                if res is True:
-                    # down youtube video as mp3 format
-                    await self.get_youtube_video_as_mp3(video_url, title)
-                    exit()
+        try:
+            for video_id in video_list:
+                video_url, title = await self.get_best_download_url(video_id)
+                if video_url != "" and title != "":
+                    # down youtube video caption
+                    res = await self.get_video_caption(video_id, search_info, title)
+                    if res is True:
+                        # down youtube video as mp3 format
+                        await self.get_youtube_video_as_mp3(video_url, title)
+        except Exception as e:
+            logger.info("Video_id: %s error_msg: %s", video_id, e)
 
     async def get_youtube_search_results(self, search_url):
+        try:
+            list_url = ''
+            video_list = []
+
+            while True:
+                requesturl = list_url if list_url.strip() else search_url
+                listpagedata = await self.get_data(requesturl)
+                if listpagedata:
+                    if listpagedata['items']:
+                        for item in listpagedata['items']:
+                            video_list.append(item['id']['videoId'])
+
+                    if listpagedata['pageInfo']['totalResults'] > 50:
+                        if listpagedata['nextPageToken'].strip():
+                            list_url = search_url + '&pageToken=' + listpagedata['nextPageToken']
+                        else:
+                            break
+                    else:
+                        break
+                else:
+                    break
+        except Exception as e:
+            logger.info("Search_url: %s error_msg: %s", search_url, e)
+
+        return video_list
+
+    async def get_data(self, search_url):
         r = requests.get(search_url, verify=False)
         data_list = r.content.decode('utf-8', 'ignore')
         json_data_list = json.loads(data_list)
-        if json_data_list['items']:
-            id_list = []
-            for item in json_data_list['items']:
-                id_list.append(item['id']['videoId'])
 
-        return id_list
+        return json_data_list
+
 
     async def get_best_download_url(self, video_id):
         # you-get
@@ -68,7 +99,8 @@ class YoutubeSpider(object):
 
         return download_url, title
 
-    async def get_youtube_video_as_mp3(self, video_url, title):
+    @staticmethod
+    async def get_youtube_video_as_mp3(video_url, title):
         file_name = pathjoin(config.DOWN_DIR, title+'.mp3')
 
         url_path = video_url
@@ -126,7 +158,8 @@ class YoutubeSpider(object):
             print(video_id + ' xml is empty!')
             return False
 
-    async def run_cmd(self, cmd):
+    @staticmethod
+    async def run_cmd(cmd):
         process = subprocess.Popen(cmd, shell=True,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         result_f, error_f = process.stdout, process.stderr
@@ -143,7 +176,8 @@ class YoutubeSpider(object):
 
         return result_str
 
-    def sec_to_srt_format(self, t):
+    @staticmethod
+    def sec_to_srt_format(t):
         tm = t * 1000
         hao = tm % 1000
         tm = tm / 1000
