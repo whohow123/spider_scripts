@@ -82,7 +82,6 @@ class YoutubeSpider(object):
 
         return json_data_list
 
-
     async def get_best_download_url(self, video_id):
         # you-get
         title = ''
@@ -111,7 +110,7 @@ class YoutubeSpider(object):
                 inputs={url_path: None},
                 outputs={mp3_path: ' -acodec libmp3lame -vn '}
             )
-            ff.cmd
+            # ff.cmd
             ff.run()
 
             print(title+' === Success !')
