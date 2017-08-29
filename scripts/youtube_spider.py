@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 import io
 import logging
 from src import LogFormat
+from concurrent import futures
 
 LogFormat().main()
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='gb18030')
 
 class YoutubeSpider(object):
     """download youtube video info"""
-    async def run(self, begin, end):
+    async def run(self, loop, begin, end):
         search_info = {
             'words': 'child',
             'lan': 'en',
@@ -44,9 +45,18 @@ class YoutubeSpider(object):
                     res = await self.get_video_caption(video_id, search_info, title)
                     if res is True:
                         # down youtube video as mp3 format
-                        await self.get_youtube_video_as_mp3(video_url, title)
+                        await self.multi_process_handle_mp3(loop, video_url, title)
         except Exception as e:
-            logger.info("Video_id: %s error_msg: %s", video_id, e)
+            logger.info("Video_id: %s error_msg: %s", video_id, e, exc_info=True)
+
+        return
+
+    async def multi_process_handle_mp3(self, loop, video_url, title):
+        """multi process to handle computation-intensive tasks"""
+        executor = futures.ProcessPoolExecutor(max_workers=5)
+        await loop.run_in_executor(executor, self.get_youtube_video_as_mp3, video_url, title)
+
+        return
 
     async def get_youtube_search_results(self, search_url):
         try:
@@ -62,7 +72,7 @@ class YoutubeSpider(object):
                             video_list.append(item['id']['videoId'])
 
                     if listpagedata['pageInfo']['totalResults'] > 50:
-                        if listpagedata['nextPageToken'].strip():
+                        if listpagedata['items'] and listpagedata['nextPageToken'].strip():
                             list_url = search_url + '&pageToken=' + listpagedata['nextPageToken']
                         else:
                             break
@@ -71,7 +81,7 @@ class YoutubeSpider(object):
                 else:
                     break
         except Exception as e:
-            logger.info("Search_url: %s error_msg: %s", search_url, e)
+            logger.info("Search_url: %s error_msg: %s", search_url, e, exc_info=True)
 
         return video_list
 
@@ -98,8 +108,10 @@ class YoutubeSpider(object):
 
         return download_url, title
 
-    @staticmethod
-    async def get_youtube_video_as_mp3(video_url, title):
+    def get_youtube_video_as_mp3(self, *args):
+        video_url = args[0]
+        title = args[1]
+
         file_name = pathjoin(config.DOWN_DIR, title+'.mp3')
 
         url_path = video_url
@@ -110,13 +122,12 @@ class YoutubeSpider(object):
                 inputs={url_path: None},
                 outputs={mp3_path: ' -acodec libmp3lame -vn '}
             )
-            # ff.cmd
             ff.run()
 
-            print(title+' === Success !')
+            logger.info(title + ' === Success !')
             return True
         except ffmpy.FFRuntimeError:
-            print("MP4 to MP3 failed")
+            logger.info("MP4 to MP3 failed")
 
     async def get_video_caption(self, *args):
         # script get youtube video caption
@@ -135,7 +146,7 @@ class YoutubeSpider(object):
         r_caps_en_xml = requests.get(caption_url, verify=False)
         xml_content = r_caps_en_xml.content.decode('utf-8', 'ignore')
         if xml_content:
-            soup_caps_en_xml = BeautifulSoup(xml_content)
+            soup_caps_en_xml = BeautifulSoup(xml_content, "lxml")
             list_data = soup_caps_en_xml.find_all('text')
 
             # 将XML信息转换成.srt字幕信息并打印保存成srt文件
@@ -154,7 +165,7 @@ class YoutubeSpider(object):
                     num += 1
             return True
         else:
-            print(video_id + ' xml is empty!')
+            logger.info(video_id + ' caption xml is empty!')
             return False
 
     @staticmethod

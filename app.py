@@ -1,9 +1,6 @@
 # coding:utf-8
 import asyncio
-import sys
-import os
 import datetime
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.youtube_spider import YoutubeSpider
 
