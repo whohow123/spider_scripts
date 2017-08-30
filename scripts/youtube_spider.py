@@ -25,7 +25,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='gb18030')
 
 class YoutubeSpider(object):
     """download youtube video info"""
-    async def run(self, loop, begin, end):
+    async def run(self, op_type, loop, begin, end):
         search_info = {
             'words': 'child',
             'lan': 'en',
@@ -36,19 +36,30 @@ class YoutubeSpider(object):
                      (search_info['words'], config.GOOGLEAPIS_KEY, search_info['region_code'],
                       search_info['relevance_language'], begin, end)
 
-        video_list = await self.get_youtube_search_results(search_url)
-        try:
-            for video_id in video_list:
-                video_url, title = await self.get_best_download_url(video_id)
-                if video_url != "" and title != "":
-                    # down youtube video caption
-                    res = await self.get_video_caption(video_id, search_info, title)
-                    if res is True:
-                        # down youtube video as mp3 format
-                        await self.multi_process_handle_mp3(loop, video_url, title)
-        except Exception as e:
-            logger.info("Video_id: %s error_msg: %s", video_id, e, exc_info=True)
+        video_list = []
 
+        # op_type='csv' get video_ids from csv
+        if op_type == 'csv':
+            pass
+
+        # op_type='search' get video_ids from youtube search api
+        if op_type == 'search':
+            video_list = await self.get_youtube_search_results(search_url)
+
+        if video_list:
+            try:
+                for video_id in video_list:
+                    video_url, title = await self.get_best_download_url(video_id)
+                    if video_url != "" and title != "":
+                        # down youtube video caption
+                        res = await self.get_video_caption(video_id, search_info, title)
+                        if res is True:
+                            # down youtube video as mp3 format
+                            await self.multi_process_handle_mp3(loop, video_url, title)
+            except Exception as e:
+                logger.info("Video_id: %s error_msg: %s", video_id, e, exc_info=True)
+        else:
+            logger.info("op_type: %s error_msg: %s", op_type, 'video_ids can not be null', exc_info=True)
         return
 
     async def multi_process_handle_mp3(self, loop, video_url, title):

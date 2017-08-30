@@ -8,3 +8,8 @@ YOUTUBE_SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search?q=%s&key=%s&'
 YOUTUBE_CAPTION_URL = 'http://video.google.com/timedtext?lang=%s&v=%s'
 DOWN_DIR = '/Users/whohow/videos/'
 LOG_DIR = "/data/log/script/"
+SEARCH_WORDS = [
+    'child',
+    'monster'
+]
+
