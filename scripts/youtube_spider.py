@@ -54,20 +54,26 @@ class YoutubeSpider(object):
                         # down youtube video caption
                         res = await self.get_video_caption(video_id, search_info, title)
                         if res is True:
-                            # down youtube video as mp3 format
-                            await self.multi_process_handle_mp3(loop, video_url, title)
+                            # down youtube video as mp3 format and split to pieces wav
+                            await self.multi_process_handle_mp3(loop, video_url, video_id)
+
             except Exception as e:
                 logger.info("Video_id: %s error_msg: %s", video_id, e, exc_info=True)
         else:
             logger.info("op_type: %s error_msg: %s", op_type, 'video_ids can not be null', exc_info=True)
         return
 
-    async def multi_process_handle_mp3(self, loop, video_url, title):
+    async def multi_process_handle_mp3(self, loop, video_url, video_id):
         """multi process to handle computation-intensive tasks"""
         executor = futures.ProcessPoolExecutor(max_workers=5)
-        await loop.run_in_executor(executor, self.get_youtube_video_as_mp3, video_url, title)
+        await loop.run_in_executor(executor, self.get_youtube_video_as_mp3, video_url, video_id)
 
         return
+
+    def t2s(self, time_str):
+        h, m, s = time_str.strip().split(":")
+        s, ms = s.strip().split(",")
+        return int(h) * 3600 + int(m) * 60 + int(s) + float(int(ms) / 1000)
 
     async def get_youtube_search_results(self, search_url):
         try:
@@ -121,9 +127,9 @@ class YoutubeSpider(object):
 
     def get_youtube_video_as_mp3(self, *args):
         video_url = args[0]
-        title = args[1]
+        video_id = args[1]
 
-        file_name = pathjoin(config.DOWN_DIR, title+'.mp3')
+        file_name = pathjoin(config.DOWN_DIR, video_id+'.mp3')
 
         url_path = video_url
         mp3_path = file_name
@@ -134,11 +140,62 @@ class YoutubeSpider(object):
                 outputs={mp3_path: ' -acodec libmp3lame -vn '}
             )
             ff.run()
-
-            logger.info(title + ' === Success !')
-            return True
+            logger.info(video_id + ' === Success !')
         except ffmpy.FFRuntimeError:
             logger.info("MP4 to MP3 failed")
+
+        # split mp3 to every wav by caption
+        self.call_split_mp3_to_each_wav(file_name, video_id)
+
+    def call_split_mp3_to_each_wav(self, file_name, video_id):
+        file_srt = config.DOWN_DIR + video_id + '.srt'
+        self.split_mp3_to_each_wav(file_srt, file_name, video_id)
+
+    def split_mp3_to_each_wav(self, *args):
+        file_srt = args[0]
+        file_mp3 = args[1]
+        video_id = args[2]
+
+        file_obj = open(file_srt)
+
+        try:
+            for (num, line) in enumerate(file_obj):
+                if num == 0:
+                    continue
+
+                if (num % 3) == 1 or num == 1:
+                    start, end = line.split(' --> ')
+
+                    start = self.t2s(start)
+                    end = self.t2s(end[:-1])
+                    duration = float('%.3f' % (end - start))
+
+                    # if not exist, create dir
+                    if not os.path.exists(config.DOWN_DIR + video_id + '/'):
+                        os.makedirs(config.DOWN_DIR + video_id + '/')
+
+                    mp3_path = file_mp3
+                    wav_path = pathjoin(
+                            config.DOWN_DIR,
+                            video_id + '/',
+                            video_id + '-' + str(start) + '_' + str(end) + '.wav')
+
+                    ff = ffmpy.FFmpeg(
+                        inputs={mp3_path: None},
+                        outputs={wav_path: ' -y -ss ' + str(start) + ' -t ' + str(duration) + ' -acodec copy -vn '}
+                    )
+                    ff.run()
+
+                if (num % 3) == 2 or num == 2:
+                    f = open(config.DOWN_DIR + video_id + '/' + video_id + '-' + str(start) + '_' + str(end) + '.srt', 'w')
+                    f.write(line)
+                    f.close()
+            logger.info(video_id + ' MP3 split Success !')
+        except Exception as e:
+            logger.info(video_id + ' MP3 split failed !', e, exc_info=True)
+
+        file_obj.close()
+        return
 
     async def get_video_caption(self, *args):
         # script get youtube video caption
@@ -149,7 +206,7 @@ class YoutubeSpider(object):
         title = title.replace(':', ' -').replace('|', '-')
 
         # 设置要保存.srt字幕的路径
-        des = config.DOWN_DIR + title + '.srt'
+        des = config.DOWN_DIR + video_id + '.srt'
 
         # 获取自带字幕
         caption_url = config.YOUTUBE_CAPTION_URL % (search_info['lan'], video_id)
@@ -162,18 +219,16 @@ class YoutubeSpider(object):
 
             # 将XML信息转换成.srt字幕信息并打印保存成srt文件
             with open(des, 'w', encoding='utf-8') as f:
-                num = 1
                 for i in list_data:
                     start_time = float(i['start'])
                     end_time = float(i['start']) + float(i['dur'])
                     start_time = self.sec_to_srt_format(start_time)
                     end_time = self.sec_to_srt_format(end_time)
                     text_line = unescape(i.text).replace('\n', ' ')
-                    mystr = """{var1} 
-                    {var2} --> {var3} 
-                    {var4}\n """.format(var1=num, var2=start_time, var3=end_time, var4=text_line)
+                    mystr = """
+                    {var1} --> {var2} 
+                    {var3}\n """.format(var1=start_time, var2=end_time, var3=text_line)
                     f.writelines(mystr)
-                    num += 1
             return True
         else:
             logger.info(video_id + ' caption xml is empty!')

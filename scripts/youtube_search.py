@@ -31,7 +31,7 @@ class YoutubeSearch(object):
             listpagedata = await self.youtube_spider.get_data(search_url)
 
             if listpagedata['items']:
-                with codecs.open(config.LOG_DIR+word+".csv", "w", encoding="utf-8") as datacsv:
+                with codecs.open(config.LOG_DIR+"topic videos.csv", "a", encoding="utf-8") as datacsv:
 
                     i = 0
                     for item in listpagedata['items']:
@@ -40,14 +40,19 @@ class YoutubeSearch(object):
                         # csv文件插入一行数据，把下面列表中的每一项放入一个单元格（可以用循环插入多行）
                         if i == 0:
                             csvwriter.writerow([
+                                word
+                            ])
+                            csvwriter.writerow([
                                 'title',
                                 'link',
+                                'publish_time',
                                 'screen_url'
                             ])
                         else:
                             csvwriter.writerow([
                                 item['snippet']['title'],
                                 config.DETAIL_YOUTUBE + item['id']['videoId'],
+                                item['snippet']['publishedAt'],
                                 item['snippet']['thumbnails']['high']['url']
                             ])
 
