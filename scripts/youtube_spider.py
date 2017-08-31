@@ -15,6 +15,7 @@ import io
 import logging
 from src import LogFormat
 from concurrent import futures
+import csv
 
 LogFormat().main()
 logger = logging.getLogger(__name__)
@@ -40,7 +41,15 @@ class YoutubeSpider(object):
 
         # op_type='csv' get video_ids from csv
         if op_type == 'csv':
-            pass
+            with open(config.LOG_DIR + "TED.csv", "r", encoding="utf-8") as csvfile:
+                # 读取csv文件，返回的是迭代类型
+                read = csv.reader(csvfile)
+                for i in read:
+                    if str(i[1]).find('https') == 0:
+                        temp = str(i[1]).split('?v=')[1]
+                        video_list.append(temp)
+                    else:
+                        continue
 
         # op_type='search' get video_ids from youtube search api
         if op_type == 'search':
